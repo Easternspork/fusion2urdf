@@ -6,8 +6,6 @@
 import adsk, adsk.core, adsk.fusion, traceback
 import os
 import sys
-import tkinter as tk
-from tkinter import messagebox as mb
 from .utils import utils
 from .core import Link, Joint, Write
 
@@ -52,30 +50,13 @@ def run(context):
             ui.messageBox('Fusion2URDF was canceled', title)
             return 0
         
-        appWin=tk.Tk()
-        appWin.title("Choose your ROS Version")
-        appWin.attributes('-toolwindow', True)
-        appWin.geometry('300x150')
+        ros_choice = ui.messageBox(
+            'Choose your ROS Version:\nYes = ROS 2\nNo = ROS 1',
+            title,
+            adsk.core.MessageBoxButtonTypes.YesNoButtonType
+        )
+        ros_version = 2 if ros_choice == adsk.core.DialogResults.DialogYes else 1
 
-        ros_selection = tk.IntVar()
-        def sel():
-            appWin.destroy()
-            appWin.quit()
-
-
-        tk.Radiobutton(appWin, text="ROS 1",font=('Aerial', 14) ,indicatoron = 0, width = 150, height = 3, variable=ros_selection, value=1,
-                  command=sel).pack()
-
-        tk.Radiobutton(appWin, text="ROS 2",font=('Aerial', 14), indicatoron = 0, width = 150, height = 3, variable=ros_selection, value=2,
-                  command=sel).pack()
-
-        appWin.mainloop()
-
-        
-
-        
-        
-   
         save_dir= save_dir + '/' + package_name
         try: os.mkdir(save_dir)
         except: pass  
@@ -110,10 +91,10 @@ def run(context):
         links_xyz_dict = {} 
         # --------------------
         # Generate URDF
-        Write.write_urdf(joints_dict, links_xyz_dict, inertial_dict, material_dict, package_name, robot_name, save_dir, ros_selection.get() != 2)
+        Write.write_urdf(joints_dict, links_xyz_dict, inertial_dict, material_dict, package_name, robot_name, save_dir, ros_version != 2)
         Write.write_materials_xacro(color_dict, robot_name, save_dir)
         Write.write_transmissions_xacro(joints_dict, links_xyz_dict, robot_name, save_dir)
-        if (ros_selection.get() == 2):
+        if (ros_version == 2):
 
             utils.copy_package(save_dir, package_dir_ros2)
             utils.update_cmakelists(save_dir, package_name)
