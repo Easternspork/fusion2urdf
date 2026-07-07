@@ -1,8 +1,8 @@
 # fusion2urdf
 
-I forked this repo from [syuntoku14](https://github.com/syuntoku14/fusion2urdf) who did a super work. During the usage of the original package some restriction hit me quite hard. I decided to add some new features to the package like handling nested components and colors.
+Forked from [SpaceMaster85](https://github.com/SpaceMaster85/fusion2urdf), who forked from [syuntoku14](https://github.com/syuntoku14/fusion2urdf). Further fixes applied with [Claude Code](https://claude.ai/code) (Anthropic) to make the exporter work on macOS with Fusion 360's bundled Python 3.14.
 
-Hope you enjoy the new features!
+**Tested on:** macOS Sequoia, Autodesk Fusion 360 (2025), Fusion's bundled Python 3.14, Apple Silicon (M-series).
 
 This repo only supports Gazebo, if you are using pybullet, see: https://github.com/yanshil/Fusion2PyBullet.
 
