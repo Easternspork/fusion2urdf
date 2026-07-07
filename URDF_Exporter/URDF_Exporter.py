@@ -67,12 +67,11 @@ def run(context):
         # --------------------
         # set dictionaries
         
-        # Generate joints_dict. All joints are related to root. 
-        joints_dict, msg = Joint.make_joints_dict(root, msg)
+        # Generate joints_dict. All joints are related to root.
+        joints_dict, skipped_joints, msg = Joint.make_joints_dict(root, msg)
         if msg != success_msg:
             ui.messageBox(msg, title)
-            return 0   
-        print(joints_dict)
+            return 0
         # Generate inertial_dict
         inertial_dict, msg = Link.make_inertial_dict(root, msg)
         if msg != success_msg:

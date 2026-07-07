@@ -53,33 +53,25 @@ def write_link_urdf(joints_dict, repo, links_xyz_dict, file_name, inertial_dict,
         f.write('\n')
 
         # others
+        written_children = set()
         for joint in joints_dict:
-            num_child = 0
-            for joint_search in joints_dict:
-                if joints_dict[joint]['child'] == joints_dict[joint_search]['child']:
-                    num_child += 1
-
-            if num_child > 1:
-                app = adsk.core.Application.get()
-                ui = app.userInterface
-                ui.messageBox("Component %s with more than one child connection.\
-                     \nThis mostly happens when you connect several subcomponents to different parents.\
-                      \nBe aware to threat nested componets as a singel component!"
-                % (joints_dict[joint]['child']), "Error!")
-                quit()
-            else: 
-                name = re.sub('[ :()]', '_', joints_dict[joint]['child'])
-                center_of_mass = \
-                    [ i-j for i, j in zip(inertial_dict[name]['center_of_mass'], joints_dict[joint]['xyz'])]
-                link = Link.Link(name=name, xyz=joints_dict[joint]['xyz'],\
-                    center_of_mass=center_of_mass,\
-                    repo=repo, mass=inertial_dict[name]['mass'],\
-                    inertia_tensor=inertial_dict[name]['inertia'],
-                    material = material_dict[name]['material'])
-                links_xyz_dict[link.name] = link.xyz            
-                link.make_link_xml()
-                f.write(link.link_xml)
-                f.write('\n')
+            raw_child = joints_dict[joint]['child']
+            name = 'base_link' if 'base_link' in raw_child else raw_child
+            if name == 'base_link' or name in written_children:
+                links_xyz_dict.setdefault(name, [0, 0, 0])
+                continue
+            written_children.add(name)
+            center_of_mass = \
+                [ i-j for i, j in zip(inertial_dict[name]['center_of_mass'], joints_dict[joint]['xyz'])]
+            link = Link.Link(name=name, xyz=joints_dict[joint]['xyz'],\
+                center_of_mass=center_of_mass,\
+                repo=repo, mass=inertial_dict[name]['mass'],\
+                inertia_tensor=inertial_dict[name]['inertia'],
+                material = material_dict[name]['material'])
+            links_xyz_dict[link.name] = link.xyz
+            link.make_link_xml()
+            f.write(link.link_xml)
+            f.write('\n')
 
 
 def write_joint_urdf(joints_dict, repo, links_xyz_dict, file_name):
@@ -100,9 +92,13 @@ def write_joint_urdf(joints_dict, repo, links_xyz_dict, file_name):
     """
     
     with open(file_name, mode='a') as f:
+        written_joint_children = set()
         for j in joints_dict:
             parent = joints_dict[j]['parent']
             child = joints_dict[j]['child']
+            if child in written_joint_children:
+                continue
+            written_joint_children.add(child)
             joint_type = joints_dict[j]['type']
             upper_limit = joints_dict[j]['upper_limit']
             lower_limit = joints_dict[j]['lower_limit']
@@ -117,7 +113,7 @@ whether the connections\nparent=component2=%s\nchild=component1=%s\nare correct 
 to swap component1<=>component2"
                 % (parent, child, parent, child), "Error!")
                 quit()
-                
+
             joint = Joint.Joint(name=j, joint_type = joint_type, xyz=xyz, \
             axis=joints_dict[j]['axis'], parent=parent, child=child, \
             upper_limit=upper_limit, lower_limit=lower_limit)

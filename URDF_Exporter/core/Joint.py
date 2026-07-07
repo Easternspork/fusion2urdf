@@ -125,8 +125,19 @@ def make_joints_dict(root, msg):
     'PinSlot', 'Planner', 'Ball']  # these are the names in urdf
 
     joints_dict = {}
-    
-    for joint in root.joints:
+    skipped_joints = []
+
+    # Collect joints from root and all sub-assemblies (sub-assembly joints are
+    # not included in root.joints when defined inside a nested component).
+    all_joints = list(root.joints)
+    seen_tokens = {j.entityToken for j in root.joints}
+    for occ in root.allOccurrences:
+        for j in occ.component.joints:
+            if j.entityToken not in seen_tokens:
+                seen_tokens.add(j.entityToken)
+                all_joints.append(j)
+
+    for joint in all_joints:
         if joint.isLightBulbOn :
             joint_dict = {}
             joint_type = joint_type_list[joint.jointMotion.jointType]
@@ -182,18 +193,19 @@ def make_joints_dict(root, msg):
     
             if joint.occurrenceTwo != None and joint.occurrenceOne != None and joint.occurrenceOne.isLightBulbOn:
                 parent_occ = get_parent(joint.occurrenceTwo)
-                # print("Joint 1 Parent: " +parent_occ.name)
                 if "base_link" in parent_occ.name:
                     joint_dict['parent'] = 'base_link'
                     base_link = parent_occ
                 else:
                     joint_dict['parent'] = re.sub('[ :()]', '_', parent_occ.name)
-                # print("Joint 2: " +joint.occurrenceOne.name)
                 parent_occ = get_parent(joint.occurrenceOne)
-                # print("Joint 2 Parent: " +parent_occ.name)
                 joint_dict['child'] = re.sub('[ :()]', '_', parent_occ.name)
             else:
-                break
+                reason = 'occ1=None' if joint.occurrenceOne is None else \
+                         'occ2=None' if joint.occurrenceTwo is None else \
+                         'occ1 hidden'
+                skipped_joints.append('%s (%s)' % (joint.name, reason))
+                continue
             
             def getJointOriginWorldCoordinates(joint :adsk.fusion.Joint):
             # Function to transform the joint origin coordinates which are in the component context into world coordinates
@@ -252,4 +264,4 @@ def make_joints_dict(root, msg):
                     break
     
             joints_dict[joint.name] = joint_dict
-    return joints_dict, msg
+    return joints_dict, skipped_joints, msg
