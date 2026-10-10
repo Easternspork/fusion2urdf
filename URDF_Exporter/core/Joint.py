@@ -129,16 +129,20 @@ def make_joints_dict(root, msg):
 
     # Collect joints from root and all sub-assemblies (sub-assembly joints are
     # not included in root.joints when defined inside a nested component).
-    all_joints = list(root.joints)
-    seen_tokens = {j.entityToken for j in root.joints}
+    # Sub-assembly joints must be converted into the root assembly context
+    # (proxy), otherwise their occurrences resolve to names local to the
+    # sub-component that don't match any root-level link.
+    # As-built joints are collected too. Hidden joints are not exported.
+    all_joints = list(root.joints) + list(root.asBuiltJoints)
     for occ in root.allOccurrences:
-        for j in occ.component.joints:
-            if j.entityToken not in seen_tokens:
-                seen_tokens.add(j.entityToken)
-                all_joints.append(j)
+        for j in list(occ.component.joints) + list(occ.component.asBuiltJoints):
+            proxy = j.createForAssemblyContext(occ)
+            all_joints.append(proxy if proxy else j)
 
     for joint in all_joints:
-        if joint.isLightBulbOn :
+        if not joint.isLightBulbOn:
+            skipped_joints.append('%s (joint hidden)' % joint.name)
+        else:
             joint_dict = {}
             joint_type = joint_type_list[joint.jointMotion.jointType]
             joint_dict['type'] = joint_type
@@ -192,14 +196,18 @@ def make_joints_dict(root, msg):
                 return occ
     
             if joint.occurrenceTwo != None and joint.occurrenceOne != None and joint.occurrenceOne.isLightBulbOn:
-                parent_occ = get_parent(joint.occurrenceTwo)
-                if "base_link" in parent_occ.name:
-                    joint_dict['parent'] = 'base_link'
+                parent_occ = utils.link_occurrence_for(joint.occurrenceTwo)
+                joint_dict['parent'] = utils.link_name(parent_occ)
+                if joint_dict['parent'] == 'base_link':
                     base_link = parent_occ
-                else:
-                    joint_dict['parent'] = re.sub('[ :()]', '_', parent_occ.name)
-                parent_occ = get_parent(joint.occurrenceOne)
-                joint_dict['child'] = re.sub('[ :()]', '_', parent_occ.name)
+                child_occ = utils.link_occurrence_for(joint.occurrenceOne)
+                joint_dict['child'] = utils.link_name(child_occ)
+                if not parent_occ.isVisible or not child_occ.isVisible:
+                    skipped_joints.append('%s (connects a hidden component)' % joint.name)
+                    continue
+                if joint_dict['parent'] == joint_dict['child']:
+                    skipped_joints.append('%s (both sides in same link %s)' % (joint.name, joint_dict['child']))
+                    continue
             else:
                 reason = 'occ1=None' if joint.occurrenceOne is None else \
                          'occ2=None' if joint.occurrenceTwo is None else \
@@ -247,7 +255,10 @@ def make_joints_dict(root, msg):
     
             try:
                 #xyz_of_joint = getJointOriginWorldCoordinates(joint)
-                xyz_of_joint = joint.geometryOrOriginTwo.origin
+                if isinstance(joint, adsk.fusion.AsBuiltJoint):
+                    xyz_of_joint = joint.geometry.origin
+                else:
+                    xyz_of_joint = joint.geometryOrOriginTwo.origin
                 joint_dict['xyz'] = [round(i / 100.0, 6) for i in xyz_of_joint.asArray()]  # converted to meter
                 #print(f"xyz : {joint_dict['xyz']}")
     
@@ -263,5 +274,51 @@ def make_joints_dict(root, msg):
                     msg = joint.name + " doesn't have joint origin. Please set it and run again."
                     break
     
-            joints_dict[joint.name] = joint_dict
+            joint_name = joint.name
+            if joint_name in joints_dict and joint.assemblyContext:
+                # same joint in another instance of a sub-assembly
+                joint_name = re.sub('[ :()]', '_', joint.assemblyContext.name) + '_' + joint_name
+            if joint_name in joints_dict:
+                skipped_joints.append('%s (duplicate joint name, renamed)' % joint_name)
+                n = 2
+                while '%s_%d' % (joint_name, n) in joints_dict:
+                    n += 1
+                joint_name = '%s_%d' % (joint_name, n)
+            joints_dict[joint_name] = joint_dict
+    found = len(joints_dict)
+    orient_joints_from_base(joints_dict, skipped_joints)
+    skipped_joints.append('(info) %d joints in design (%d root, %d as-built), %d read, %d exported'
+                          % (len(all_joints), root.joints.count, root.asBuiltJoints.count, found, len(joints_dict)))
     return joints_dict, skipped_joints, msg
+
+
+def orient_joints_from_base(joints_dict, skipped_joints):
+    """
+    URDF needs a tree rooted at base_link. Fusion's component1/component2 order
+    doesn't guarantee that, so walk outward from base_link and flip any joint
+    whose parent/child are reversed. Joints not connected to base_link, and
+    extra joints that would close a loop, are dropped and reported.
+    """
+    visited = {'base_link'}
+    frontier = ['base_link']
+    kept = set()
+    while frontier:
+        link = frontier.pop(0)
+        for name, jd in joints_dict.items():
+            if name in kept:
+                continue
+            if jd['parent'] == link and jd['child'] not in visited:
+                pass
+            elif jd['child'] == link and jd['parent'] not in visited:
+                jd['parent'], jd['child'] = jd['child'], jd['parent']
+                jd['axis'] = [-a for a in jd['axis']]  # reversed relative motion
+            else:
+                continue
+            kept.add(name)
+            visited.add(jd['child'])
+            frontier.append(jd['child'])
+    for name in list(joints_dict):
+        if name not in kept:
+            jd = joints_dict.pop(name)
+            skipped_joints.append('%s (%s -> %s not connected to base_link or closes a loop)'
+                                  % (name, jd['parent'], jd['child']))

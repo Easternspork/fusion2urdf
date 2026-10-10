@@ -19,6 +19,41 @@ import fileinput
 import sys
 
 
+def _is_split(top_occ):
+    # Top-level components with subcomponents are split one level down:
+    # each direct child occurrence becomes its own link. base_link stays whole.
+    return top_occ.childOccurrences.count > 0 and 'base_link' not in top_occ.component.name
+
+
+def link_occurrences(root):
+    """Occurrences that become URDF links."""
+    links = []
+    for top in root.occurrences:
+        if _is_split(top):
+            links.extend(top.childOccurrences)
+        else:
+            links.append(top)
+    # hidden components (or ones inside a hidden parent) are not exported
+    return [occ for occ in links if occ.isVisible]
+
+
+def link_occurrence_for(occ):
+    """Map any occurrence (at any depth) to the occurrence of the link it belongs to."""
+    chain = [occ]
+    while chain[-1].assemblyContext:
+        chain.append(chain[-1].assemblyContext)
+    top = chain[-1]
+    if _is_split(top) and len(chain) >= 2:
+        return chain[-2]
+    return top
+
+
+def link_name(occ):
+    if 'base_link' in occ.component.name:
+        return 'base_link'
+    return re.sub('[ :()+]', '_', occ.fullPathName)
+
+
 def export_stl(_app, save_dir):
     """
     export stl files into "sace_dir/"
@@ -54,14 +89,11 @@ def export_stl(_app, save_dir):
             showBodies.append(['root', lst])
 
         occ = adsk.fusion.Occurrence.cast(None)
-        for occ in root.allOccurrences:
-            if not occ.assemblyContext and occ.isLightBulbOn:
-                lst = [body for body in occ.bRepBodies if body.isLightBulbOn and occ.component.isBodiesFolderLightBulbOn]
-                if occ.childOccurrences:
-                    for child in occ.childOccurrences:
-                        lst = lst + traverse(child)
+        for occ in link_occurrences(root):
+            if occ.isLightBulbOn:
+                lst = traverse(occ)
                 if len(lst) > 0:
-                    showBodies.append([occ.name, lst])
+                    showBodies.append([link_name(occ), lst])
 
         # get clone body
         tmpBrepMng = adsk.fusion.TemporaryBRepManager.get()
@@ -98,10 +130,7 @@ def export_stl(_app, save_dir):
 
         exportMgr = des.exportManager
         for occ in expRoot.allOccurrences:
-            if "base_link" in occ.component.name:
-                expName = "base_link"
-            else:
-                expName = re.sub('[ :()]', '_', occ.component.name)
+            expName = occ.component.name
             expPath = os.path.join(exportFolder, '{}.stl'.format(expName))
             stlOpts = exportMgr.createSTLExportOptions(occ, expPath)
             exportMgr.execute(stlOpts)

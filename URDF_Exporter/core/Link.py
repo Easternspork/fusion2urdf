@@ -102,7 +102,7 @@ def make_inertial_dict(root, msg):
         Tell the status
     """
     # Get component properties.      
-    allOccs = root.occurrences
+    allOccs = utils.link_occurrences(root)
     inertial_dict = {}
     
     for occs in allOccs:
@@ -110,7 +110,7 @@ def make_inertial_dict(root, msg):
         occs_dict = {}
         prop = occs.getPhysicalProperties(adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy)
         
-        occs_dict['name'] = re.sub('[ :()]', '_', occs.name)
+        occs_dict['name'] = utils.link_name(occs)
 
         mass = prop.mass  # kg
         occs_dict['mass'] = mass
@@ -122,10 +122,7 @@ def make_inertial_dict(root, msg):
         moment_inertia_world = [_ / 10000.0 for _ in [xx, yy, zz, xy, yz, xz] ] ## kg / cm^2 -> kg/m^2
         occs_dict['inertia'] = utils.origin2center_of_mass(moment_inertia_world, center_of_mass, mass)
         
-        if 'base_link' in occs.component.name:
-            inertial_dict['base_link'] = occs_dict
-        else:
-            inertial_dict[re.sub('[ :()]', '_', occs.name)] = occs_dict
+        inertial_dict[utils.link_name(occs)] = occs_dict
 
     return inertial_dict, msg
 
@@ -158,7 +155,7 @@ def make_material_dict(root, msg):
         str_in = str_in.replace( 'ß', 'ss')
         return str_in
     # Get component properties.      
-    allOccs = root.occurrences
+    allOccs = utils.link_occurrences(root)
     material_dict = {}
 
     color_dict = {}
@@ -259,9 +256,6 @@ def make_material_dict(root, msg):
         #             color_dict[color_name] = f"{prop.value.red/255} {prop.value.green/255} {prop.value.blue/255} {prop.value.opacity/255}"
         #             break
 
-        if "base_link" in occs.component.name:
-            material_dict['base_link'] = app_dict
-        else:
-            material_dict[re.sub('[ :()]', '_', occs.name)] = app_dict
+        material_dict[utils.link_name(occs)] = app_dict
 
     return material_dict, color_dict, msg
