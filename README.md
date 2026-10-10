@@ -7,6 +7,14 @@ Forked from [SpaceMaster85](https://github.com/SpaceMaster85/fusion2urdf), who f
 This repo only supports Gazebo, if you are using pybullet, see: https://github.com/yanshil/Fusion2PyBullet.
 
 ## Updated!!!
+* 2026/10/09: Sub-assembly support and MuJoCo viewer (this fork)
+  * **Sub-assemblies become multiple links:** a top-level component that contains subcomponents is split one level down, so each direct child becomes its own link (`<parent>_<child>`, e.g. `inside_1_leg_2_1`). base_link is never split.
+  * **Joints inside sub-assemblies are exported:** joints and as-built joints defined in nested components are read in the root assembly context, so they connect the correct links.
+  * **Joint tree is built from base_link:** joints are walked outward from base_link, and any joint whose Component1/Component2 order is reversed is flipped automatically (the axis is negated so the motion is unchanged). You no longer have to pick parent = Component2 by hand.
+  * **Skipped joints are reported:** a pop-up lists every joint that isn't exported and why (hidden, connects a hidden component, both ends in the same link, not connected to base_link, closes a loop, duplicate name), followed by a line such as `(info) 12 joints in design ..., 12 read, 12 exported`.
+  * **Hidden components and joints are not exported:** turn off a light bulb to leave something out.
+  * **New `scripts/view_urdf.py`:** checks an export and opens it in MuJoCo. See [Checking an export in MuJoCo](#checking-an-export-in-mujoco).
+
 * 2021/10/13: Version 1.2
   * Made the color and material detection more robust
   * Added ROS 2 launchfile generator
@@ -95,7 +103,7 @@ Make sure z axis is upright in your fusion 360 model if you want.
 
 Before using this script, make sure that your model has all the "links" as components. You have to define the links by creating corresiponding components. For example, this model(https://grabcad.com/library/spotmini-robot-1) is not supported unless you define the "base_link". 
 
-In addition to that, you should be careful when define your joints. The **parent links** should be set as **Component2** when you define the joint, not as Component1. For example, if you define the "base_link" as Component1 when you define the joints, an error saying "KeyError: base_link__1" will show up.
+Every link must be connected to base_link through a chain of joints. The Component1/Component2 order no longer matters: the exporter orients the tree outward from base_link and flips reversed joints. Joints that don't connect to base_link are skipped and listed in a pop-up.
 
 <img src="https://github.com/spacemaster85/fusion2urdf/blob/images/spot_mini.PNG" alt="spot_mini" title="spot_mini" width="300" height="300">
 
@@ -108,9 +116,7 @@ With the new version this should also work:
 
 <img src="https://github.com/spacemaster85/fusion2urdf/blob/images/nest_components.PNG" alt="nest_components" title="nest_components" width="300" height="300">
 
-Nested components are exported as a single stl file. Therefore only joints on the root level will be taken into calculation! 
-
-Joints in nested components and on lower levels will be ignored. Only components and bodies with activated light bulb will be exported, **components and bodies with deactivated light bulb** will be ignored and **not exported!**
+Top-level components that contain subcomponents are split one level down: each direct child becomes its own link, and joints between those children (including as-built joints) are exported. Anything deeper is merged into its level-1 parent's stl, mass and inertia. base_link is always exported as one link. Only components and bodies with activated light bulb will be exported, **components and bodies with deactivated light bulb** will be ignored and **not exported!**
 
 Joints which has a deactivated child component will be ignored. Deactivating the base_link will cause problems! 
 **Joints with deactivated light bulbs will not be exported!**
@@ -118,7 +124,7 @@ Joints which has a deactivated child component will be ignored. Deactivating the
 Components connected through disabled joints will not be shown in RVIZ.
 
 
-You can use asBuildJoints, but they will also ignored!
+As-built joints are exported like normal joints.
 
 <img src="https://github.com/spacemaster85/fusion2urdf/blob/images/asBuildJoints.png" alt="asBuildJoint" title="asBuildJoint">
 
@@ -190,6 +196,24 @@ If you want to simulate your robot on gazebo, just run
 roslaunch (whatever your robot_name is(lowercase))_description gazebo.launch
 ```
 Gazebo was not tested by me!
+
+## Checking an export in MuJoCo
+
+`scripts/view_urdf.py` validates an exported `<robot>_description` folder and opens it in the MuJoCo viewer, with a slider for each joint. Nothing in the export is modified.
+
+```bash
+pip install mujoco numpy trimesh coacd rtree
+python scripts/view_urdf.py path/to/<robot>_description --zup          # report + viewer
+python scripts/view_urdf.py path/to/<robot>_description --check-only   # report only
+```
+
+* Use `python`, not `mjpython`: on macOS the viewer crashes under `mjpython`.
+* `--zup` rotates Fusion's Y-up frame to MuJoCo's Z-up. `--height` sets how high the base is held (in metres).
+* **Report:** lists the link/joint tree and flags self-joints, missing links, links with two parents, cycles, unconnected parts and unused or missing meshes. `--check-only` exits non-zero if it finds problems.
+* **Broken exports still open:** the viewer drops bad joints, attaches unconnected links and unused meshes to the root with fixed joints, and prints each change.
+* **Collisions:** base_link collides with every part, while other parts collide only with the floor (neighbouring CAD parts overlap at their joints). Every collision mesh is split into convex pieces with CoACD (finer for base_link), so contacts match the CAD instead of its convex hulls. The first run per export takes a few minutes; the pieces are cached in `$TMPDIR/view_urdf_<name>/`. Delete that folder after re-exporting.
+* **Servos:** joint stiffness is scaled to each joint's inertia, and the simulation uses the `implicitfast` integrator, so light links stay stable.
+* Meshes over 200k faces are decimated for viewing.
 
 **Enjoy your Fusion 360 and ROS life!**
 
